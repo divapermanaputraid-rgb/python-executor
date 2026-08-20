@@ -65,7 +65,21 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 03 | Domain Types | ✅ |
 | 04 | Event Schema | ✅ |
 | 05 | Execution Prototype | ✅ |
-| 06-30 | Session, Tracing, UI, AI, dst. | 🔄 In Progress |
+| 06 | Session Lifecycle | ✅ |
+| 07 | Variable State Tracking | ✅ |
+| 08 | Line Execution Tracing | ✅ |
+| 09 | Output Stream Capture | ✅ |
+| 10 | Interactive Input Handling | ✅ |
+| 11 | Function Call & Return Tracking | ✅ |
+| 12 | Call Stack Reconstruction | ✅ |
+| 13 | Structured Exception State | ✅ |
+| 14 | Execution Subprocess Isolation | ✅ |
+| 15 | Timeout & Memory Limits | ✅ |
+| 16 | Filesystem Isolation | ✅ |
+| 17 | Environment Isolation | ✅ |
+| 18 | Network & Process Restrictions | ✅ |
+| 19 | Execution Service API | ✅ |
+| 20-30 | Streaming API, Frontend UI, AI Tutor, & Hardening | 🔄 In Progress |
 
 ---
 

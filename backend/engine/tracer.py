@@ -155,7 +155,21 @@ class LineTracer:
             })
 
         elif event == "exception":
-            exc_type, exc_val, _ = arg
+            exc_type, exc_val, exc_tb = arg
+            # Format clean user traceback lines
+            tb_lines = []
+            curr_tb = exc_tb
+            while curr_tb:
+                if curr_tb.tb_frame.f_code.co_filename == USER_CODE_FILE:
+                    tb_lines.append({
+                        "line": curr_tb.tb_lineno,
+                        "function": curr_tb.tb_frame.f_code.co_name,
+                    })
+                curr_tb = curr_tb.tb_next
+
+            # Capture current frame variables at exception point
+            self._var_events(frame, line, frame_id)
+
             self._emit({
                 "type": "exception",
                 "line": line,
@@ -163,6 +177,7 @@ class LineTracer:
                 "exception": {
                     "type": exc_type.__name__,
                     "message": str(exc_val),
+                    "traceback": tb_lines,
                 },
             })
 

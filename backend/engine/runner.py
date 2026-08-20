@@ -45,6 +45,23 @@ def _set_resource_limits() -> None:
         pass
 
 
+def _get_minimal_env() -> dict[str, str]:
+    """
+    Construct minimal environment for child execution process.
+    SECURITY_SPEC.md §9: Host secrets must not leak to user code.
+    """
+    clean_env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "PYTHONPATH": str(_ENGINE_DIR.parent),
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "SANDBOX_ID": "isolated_exec",
+    }
+    return clean_env
+
+
 def run_code(
     source: str,
     inputs: list[str] | None = None,
@@ -52,13 +69,13 @@ def run_code(
     work_dir: str | None = None,
 ) -> RunResult:
     """
-    Execute source in isolated child process within a temporary working directory.
-    SECURITY_SPEC.md §6-7: Filesystem Isolation
+    Execute source in isolated child process within a temporary working directory
+    and minimal environment.
+    SECURITY_SPEC.md §6-7, §9: Filesystem and Environment Isolation
     """
     if len(source.encode()) > MAX_SOURCE_BYTES:
         raise ValueError(f"Source code size exceeds limit of {MAX_SOURCE_BYTES} bytes")
 
-    # Use specified working directory or create temporary isolated dir
     temp_dir_obj = None
     if work_dir is None:
         temp_dir_obj = tempfile.TemporaryDirectory(prefix="exec_sandbox_")
@@ -82,6 +99,7 @@ def run_code(
                 timeout=timeout,
                 text=True,
                 cwd=target_dir,
+                env=_get_minimal_env(),
                 preexec_fn=_set_resource_limits if os.name != "nt" else None,
             )
         except subprocess.TimeoutExpired:

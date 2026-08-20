@@ -10,6 +10,7 @@ execution_flow.md §30: "Current line must come from execution trace."
 """
 from __future__ import annotations
 import builtins
+from pathlib import Path
 import sys
 import json
 import time
@@ -202,6 +203,29 @@ def trace_exec(source: str, inputs: list[str] | None = None) -> None:
     # Input queue setup
     input_queue = list(inputs) if inputs is not None else []
     original_input = builtins.input
+    original_open = builtins.open
+
+    # Filesystem sandbox boundary check (SECURITY_SPEC.md §6)
+    sandbox_root = Path.cwd().resolve()
+
+    def custom_open(file, mode="r", *args, **kwargs):
+        # Only enforce sandbox check when called from user code
+        frame = sys._getframe(1)
+        if frame.f_code.co_filename == USER_CODE_FILE:
+            try:
+                target_path = Path(file).resolve()
+                if not (target_path == sandbox_root or sandbox_root in target_path.parents):
+                    tracer._emit({
+                        "type": "security_violation",
+                        "line": frame.f_lineno,
+                        "reason": f"filesystem_access_blocked: {file}",
+                    })
+                    raise PermissionError(f"Access to host path '{file}' is forbidden by sandbox")
+            except (TypeError, ValueError):
+                pass
+        return original_open(file, mode, *args, **kwargs)
+
+    builtins.open = custom_open
 
     def custom_input(prompt: str = "") -> str:
         # Get frame of user code calling input()
@@ -284,5 +308,6 @@ def trace_exec(source: str, inputs: list[str] | None = None) -> None:
     finally:
         sys.settrace(None)
         builtins.input = original_input
+        builtins.open = original_open
         sys.stdout = real_stdout
         sys.stderr = real_stderr

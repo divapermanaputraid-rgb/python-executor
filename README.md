@@ -85,7 +85,8 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 23 | Execution Controls & Stepper UI | ✅ |
 | 24 | State Visualization Panels (Variables, Stack, Output) | ✅ |
 | 25 | Interactive Input Prompting UI Modal | ✅ |
-| 26-30 | API Integration, AI Context Builder, AI Tutor, & Hardening | 🔄 In Progress |
+| 26 | Backend API & SSE Stream Integration | ✅ |
+| 27-30 | AI Context Builder, Socratic AI Tutor, & Hardening | 🔄 In Progress |
 
 ---
 

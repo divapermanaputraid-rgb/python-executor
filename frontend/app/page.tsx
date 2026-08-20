@@ -8,13 +8,16 @@ import ExecutionControls from "./components/ExecutionControls";
 import VisualizationPanel, { ExecutionSnapshotUI } from "./components/VisualizationPanel";
 import TutorPanel from "./components/TutorPanel";
 import InputPromptModal from "./components/InputPromptModal";
+import { executeCode, executeCodeStream, StreamItem } from "./services/api";
 
 export default function Home() {
-  const [code, setCode] = useState("# Write Python code here\nname = input('Enter name: ')\nprint(f'Hello {name}')");
+  const [code, setCode] = useState("# Write Python code here\nx = 5\ny = 10\nprint(x + y)");
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
+
+  const [snapshots, setSnapshots] = useState<ExecutionSnapshotUI[]>([]);
   const [currentSnapshot, setCurrentSnapshot] = useState<ExecutionSnapshotUI | null>(null);
 
   // Input prompting state
@@ -22,85 +25,92 @@ export default function Home() {
   const [inputPrompt, setInputPrompt] = useState("");
   const [submittedInputs, setSubmittedInputs] = useState<string[]>([]);
 
-  const demoSnapshots: ExecutionSnapshotUI[] = [
-    {
-      status: "WAITING_FOR_INPUT",
-      current_line: 2,
-      current_frame_id: "f1",
-      variables: {},
-      call_stack: [
-        { frame_id: "f1", function: "<module>", scope: "global", line: 2, variables: {} },
-      ],
-      stdout: "",
-      stderr: "",
-      exception: null,
-    },
-    {
-      status: "COMPLETED",
-      current_line: 3,
-      current_frame_id: "f1",
-      variables: { name: { type: "str", repr: "'Alice'" } },
-      call_stack: [
-        {
-          frame_id: "f1",
-          function: "<module>",
-          scope: "global",
-          line: 3,
-          variables: { name: { type: "str", repr: "'Alice'" } },
-        },
-      ],
-      stdout: "Hello Alice\n",
-      stderr: "",
-      exception: null,
-    },
-  ];
+  const runExecution = async (inputs: string[] = []) => {
+    setIsRunning(true);
+    setSnapshots([]);
+    setCurrentStep(0);
+    setTotalSteps(0);
+    setActiveLine(null);
+    setCurrentSnapshot(null);
+
+    try {
+      // Try streaming endpoint first
+      const items: StreamItem[] = [];
+      await executeCodeStream(code, inputs, (item) => {
+        items.push(item);
+      });
+
+      const collectedSnapshots = items.map((it) => it.snapshot);
+      setSnapshots(collectedSnapshots);
+      setTotalSteps(collectedSnapshots.length);
+
+      if (collectedSnapshots.length > 0) {
+        setCurrentStep(1);
+        setCurrentSnapshot(collectedSnapshots[0]);
+        setActiveLine(collectedSnapshots[0].current_line);
+      }
+
+      // Check if last event waited for input
+      const lastEvent = items[items.length - 1]?.event;
+      if (lastEvent?.type === "input_requested") {
+        setInputPrompt(lastEvent.prompt || "Enter input: ");
+        setInputRequired(true);
+      }
+    } catch {
+      // Fallback to POST /api/execute
+      try {
+        const res = await executeCode(code, inputs);
+        const snaps: ExecutionSnapshotUI[] = res.snapshots;
+        setSnapshots(snaps);
+        setTotalSteps(snaps.length);
+
+        if (snaps.length > 0) {
+          setCurrentStep(1);
+          setCurrentSnapshot(snaps[0]);
+          setActiveLine(snaps[0].current_line);
+        }
+      } catch (err: any) {
+        console.error("Execution API Error:", err);
+      }
+    } finally {
+      setIsRunning(false);
+    }
+  };
 
   const handleRun = () => {
-    setIsRunning(true);
-    setCurrentStep(1);
-    setTotalSteps(2);
-    setActiveLine(2);
-    setCurrentSnapshot(demoSnapshots[0]);
-
-    if (code.includes("input(")) {
-      setInputPrompt("Enter name: ");
-      setInputRequired(true);
-    }
-    setIsRunning(false);
+    setSubmittedInputs([]);
+    runExecution([]);
   };
 
   const handleInputSubmit = (val: string) => {
-    setSubmittedInputs((prev) => [...prev, val]);
+    const nextInputs = [...submittedInputs, val];
+    setSubmittedInputs(nextInputs);
     setInputRequired(false);
-    // Advance to step 2 after receiving input
-    setCurrentStep(2);
-    setActiveLine(3);
-    setCurrentSnapshot({
-      ...demoSnapshots[1],
-      variables: { name: { type: "str", repr: `'${val}'` } },
-      stdout: `Hello ${val}\n`,
-    });
+    runExecution(nextInputs);
   };
 
   const handleStepNext = () => {
-    if (currentStep < totalSteps) {
-      const next = currentStep + 1;
-      setCurrentStep(next);
-      setActiveLine(next === 2 ? 3 : 4);
-      setCurrentSnapshot(demoSnapshots[next - 1]);
+    if (currentStep < totalSteps && snapshots.length >= currentStep) {
+      const nextStep = currentStep + 1;
+      const nextSnap = snapshots[nextStep - 1];
+      setCurrentStep(nextStep);
+      setCurrentSnapshot(nextSnap);
+      setActiveLine(nextSnap?.current_line ?? null);
     }
   };
 
   const handleStepPrev = () => {
     if (currentStep > 1) {
-      const prev = currentStep - 1;
-      setCurrentStep(prev);
-      setActiveLine(prev === 1 ? 2 : 3);
-      setCurrentSnapshot(demoSnapshots[prev - 1]);
+      const prevStep = currentStep - 1;
+      const prevSnap = snapshots[prevStep - 1];
+      setCurrentStep(prevStep);
+      setCurrentSnapshot(prevSnap);
+      setActiveLine(prevSnap?.current_line ?? null);
     }
   };
 
   const handleReset = () => {
+    setSnapshots([]);
     setCurrentStep(0);
     setTotalSteps(0);
     setActiveLine(null);

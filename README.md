@@ -47,7 +47,7 @@ JELASKAN dengan kata-katamu sendiri
 
 | Layer | Teknologi |
 |---|---|
-| Frontend | Next.js 15 + TypeScript + Tailwind CSS |
+| Frontend | Next.js 16 + Monaco Editor + TypeScript + Tailwind CSS |
 | Backend | Python + FastAPI + WebSocket / SSE |
 | Execution Engine | Python `sys.settrace` (real tracing, bukan simulasi) |
 | AI Tutor | LLM API (OpenAI / Anthropic) |
@@ -80,7 +80,9 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 18 | Network & Process Restrictions | ✅ |
 | 19 | Execution Service API | ✅ |
 | 20 | Event Stream (SSE API) | ✅ |
-| 21-30 | Frontend UI, AI Tutor, & Hardening | 🔄 In Progress |
+| 21 | Frontend 3-Panel Layout | ✅ |
+| 22 | Monaco Code Editor & Line Highlighter | ✅ |
+| 23-30 | Execution Controls, State Visualizer, AI Tutor, & Hardening | 🔄 In Progress |
 
 ---
 

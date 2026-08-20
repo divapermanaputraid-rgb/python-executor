@@ -1,53 +1,93 @@
 """
-Minimal Python execution in an isolated subprocess.
+Execute user Python code in an isolated subprocess with sys.settrace tracing.
 
-Security: user code runs in a child process, never in main backend process.
+Architecture:
+  backend process
+      ↓ subprocess
+  child process
+      ├── tracer.trace_exec(source)
+      ├── emits JSON events → stderr
+      └── program stdout → stdout
+  backend process
+      └── parse JSON events from stderr
+
+Security: user code never runs in main backend process. (SECURITY_SPEC.md §20)
 ponytail: no full sandbox yet — filesystem/network/env isolation in TASK 15-18.
 """
 from __future__ import annotations
+import json
 import subprocess
 import sys
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
+MAX_SOURCE_BYTES = 64 * 1024    # SECURITY_SPEC.md §27
+MAX_OUTPUT_BYTES = 256 * 1024   # SECURITY_SPEC.md §15
+DEFAULT_TIMEOUT_S = 5           # SECURITY_SPEC.md §12
 
-MAX_SOURCE_BYTES = 64 * 1024   # 64 KB — SECURITY_SPEC.md §27
-MAX_OUTPUT_BYTES = 256 * 1024  # 256 KB — SECURITY_SPEC.md §15
-DEFAULT_TIMEOUT_S = 5          # SECURITY_SPEC.md §12
+# Path to tracer module so child can import it
+_ENGINE_DIR = Path(__file__).parent
 
 
 @dataclass
 class RunResult:
-    stdout: str
-    stderr: str
-    exit_code: int
-    timed_out: bool
+    events: list[dict] = field(default_factory=list)
+    stdout: str = ""
+    stderr_raw: str = ""   # non-JSON stderr lines (Python tracebacks, etc.)
+    timed_out: bool = False
+    exit_code: int = 0
 
 
 def run_code(source: str, timeout: float = DEFAULT_TIMEOUT_S) -> RunResult:
-    """Execute Python source in an isolated subprocess and return stdout/stderr."""
+    """Execute source in isolated child process; return parsed execution events."""
     if len(source.encode()) > MAX_SOURCE_BYTES:
         raise ValueError(f"Source code exceeds {MAX_SOURCE_BYTES} bytes")
 
+    # Child bootstrap: import tracer from engine dir, then trace_exec(source)
+    escaped = source.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    bootstrap = textwrap.dedent(f"""\
+        import sys
+        sys.path.insert(0, {str(_ENGINE_DIR.parent)!r})
+        from engine.tracer import trace_exec
+        trace_exec({source!r})
+    """)
+
     try:
         result = subprocess.run(
-            [sys.executable, "-c", source],
+            [sys.executable, "-c", bootstrap],
             capture_output=True,
             timeout=timeout,
             text=True,
         )
     except subprocess.TimeoutExpired:
-        return RunResult(stdout="", stderr="", exit_code=-1, timed_out=True)
+        return RunResult(
+            timed_out=True,
+            events=[{"type": "timeout", "sequence": 1, "timestamp": 0, "limit_ms": int(timeout * 1000)}],
+        )
+
+    # Parse events from stderr (one JSON per line)
+    events: list[dict] = []
+    raw_lines: list[str] = []
+    for line in result.stderr.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            raw_lines.append(line)
 
     stdout = result.stdout
     if len(stdout.encode()) > MAX_OUTPUT_BYTES:
         stdout = stdout.encode()[:MAX_OUTPUT_BYTES].decode(errors="replace") + "\n[output truncated]"
 
     return RunResult(
+        events=events,
         stdout=stdout,
-        stderr=result.stderr,
-        exit_code=result.returncode,
+        stderr_raw="\n".join(raw_lines),
         timed_out=False,
+        exit_code=result.returncode,
     )
 
 
@@ -56,16 +96,36 @@ def run_code(source: str, timeout: float = DEFAULT_TIMEOUT_S) -> RunResult:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Basic stdout
-    r = run_code('print("hello")')
-    assert r.stdout.strip() == "hello", repr(r.stdout)
-    assert r.timed_out is False
-    assert r.exit_code == 0
+    # Basic: line events + variable tracking
+    r = run_code("x = 10\ny = x + 5\nprint(y)")
+    types = [e["type"] for e in r.events]
 
-    # Stderr / exception
-    r2 = run_code("x = 1 + 'oops'")
-    assert r2.exit_code != 0
-    assert "TypeError" in r2.stderr
+    assert "program_start" in types, types
+    assert "program_end" in types, types
+    assert "line" in types, types
+    assert "variable_created" in types, types
+    assert "output" in types, types
+
+    # Variable created with correct value
+    vc = next(e for e in r.events if e["type"] == "variable_created" and e["variable"] == "x")
+    assert vc["value"]["repr"] == "10", vc
+
+    # Variable created y = 15
+    vy = next(e for e in r.events if e["type"] == "variable_created" and e["variable"] == "y")
+    assert vy["value"]["repr"] == "15", vy
+
+    # Output event
+    out_evt = next(e for e in r.events if e["type"] == "output")
+    assert "15" in out_evt["value"], out_evt
+
+    # Sequence ordering
+    seqs = [e["sequence"] for e in r.events]
+    assert seqs == sorted(seqs), "Events out of order"
+
+    # Exception
+    r2 = run_code("x = 10\ny = '5'\nprint(x + y)")
+    exc = next(e for e in r2.events if e["type"] == "exception")
+    assert exc["exception"]["type"] == "TypeError", exc
 
     # Timeout
     r3 = run_code("while True: pass", timeout=1)
@@ -79,3 +139,4 @@ if __name__ == "__main__":
         pass
 
     print("All runner assertions passed.")
+    print(f"Events for 'x=10; y=x+5; print(y)': {[e['type'] for e in r.events]}")

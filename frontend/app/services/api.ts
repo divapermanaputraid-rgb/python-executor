@@ -29,6 +29,11 @@ export interface StreamItem {
   snapshot: ExecutionSnapshotUI;
 }
 
+export interface TutorResponse {
+  tutor_response: string;
+  suggested_question: string;
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function executeCode(code: string, inputs?: string[]) {
@@ -87,4 +92,31 @@ export async function executeCodeStream(
       }
     }
   }
+}
+
+export async function explainTutorStep(
+  sourceCode: string,
+  events: Record<string, any>[],
+  currentSnapshot?: ExecutionSnapshotUI | null,
+  userQuery?: string
+): Promise<TutorResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/tutor/explain`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source_code: sourceCode,
+      events,
+      current_snapshot: currentSnapshot,
+      user_query: userQuery,
+    }),
+  });
+
+  if (!res.ok) {
+    return {
+      tutor_response: "What do you think Python is doing at this step?",
+      suggested_question: "Why did the state change?",
+    };
+  }
+
+  return res.json();
 }

@@ -6,9 +6,9 @@ import Sidebar from "./components/Sidebar";
 import EditorPanel from "./components/EditorPanel";
 import ExecutionControls from "./components/ExecutionControls";
 import VisualizationPanel, { ExecutionSnapshotUI } from "./components/VisualizationPanel";
-import TutorPanel from "./components/TutorPanel";
+import TutorPanel, { ChatMessage } from "./components/TutorPanel";
 import InputPromptModal from "./components/InputPromptModal";
-import { executeCode, executeCodeStream, StreamItem } from "./services/api";
+import { executeCode, executeCodeStream, explainTutorStep, StreamItem } from "./services/api";
 
 export default function Home() {
   const [code, setCode] = useState("# Write Python code here\nx = 5\ny = 10\nprint(x + y)");
@@ -20,10 +20,39 @@ export default function Home() {
   const [snapshots, setSnapshots] = useState<ExecutionSnapshotUI[]>([]);
   const [currentSnapshot, setCurrentSnapshot] = useState<ExecutionSnapshotUI | null>(null);
 
+  // Tutor chat state
+  const [tutorMessages, setTutorMessages] = useState<ChatMessage[]>([]);
+  const [suggestedQuestion, setSuggestedQuestion] = useState("");
+  const [tutorLoading, setTutorLoading] = useState(false);
+
   // Input prompting state
   const [inputRequired, setInputRequired] = useState(false);
   const [inputPrompt, setInputPrompt] = useState("");
   const [submittedInputs, setSubmittedInputs] = useState<string[]>([]);
+
+  const fetchTutorExplanation = async (snap: ExecutionSnapshotUI | null, userQ?: string) => {
+    setTutorLoading(true);
+    try {
+      const res = await explainTutorStep(code, [], snap, userQ);
+      if (userQ) {
+        setTutorMessages((prev) => [
+          ...prev,
+          { sender: "student", text: userQ },
+          { sender: "tutor", text: res.tutor_response },
+        ]);
+      } else {
+        setTutorMessages((prev) => [
+          ...prev,
+          { sender: "tutor", text: res.tutor_response },
+        ]);
+      }
+      setSuggestedQuestion(res.suggested_question);
+    } catch {
+      // fallback
+    } finally {
+      setTutorLoading(false);
+    }
+  };
 
   const runExecution = async (inputs: string[] = []) => {
     setIsRunning(true);
@@ -32,9 +61,9 @@ export default function Home() {
     setTotalSteps(0);
     setActiveLine(null);
     setCurrentSnapshot(null);
+    setTutorMessages([]);
 
     try {
-      // Try streaming endpoint first
       const items: StreamItem[] = [];
       await executeCodeStream(code, inputs, (item) => {
         items.push(item);
@@ -45,19 +74,19 @@ export default function Home() {
       setTotalSteps(collectedSnapshots.length);
 
       if (collectedSnapshots.length > 0) {
+        const firstSnap = collectedSnapshots[0];
         setCurrentStep(1);
-        setCurrentSnapshot(collectedSnapshots[0]);
-        setActiveLine(collectedSnapshots[0].current_line);
+        setCurrentSnapshot(firstSnap);
+        setActiveLine(firstSnap.current_line);
+        fetchTutorExplanation(firstSnap);
       }
 
-      // Check if last event waited for input
       const lastEvent = items[items.length - 1]?.event;
       if (lastEvent?.type === "input_requested") {
         setInputPrompt(lastEvent.prompt || "Enter input: ");
         setInputRequired(true);
       }
     } catch {
-      // Fallback to POST /api/execute
       try {
         const res = await executeCode(code, inputs);
         const snaps: ExecutionSnapshotUI[] = res.snapshots;
@@ -68,6 +97,7 @@ export default function Home() {
           setCurrentStep(1);
           setCurrentSnapshot(snaps[0]);
           setActiveLine(snaps[0].current_line);
+          fetchTutorExplanation(snaps[0]);
         }
       } catch (err: any) {
         console.error("Execution API Error:", err);
@@ -96,6 +126,7 @@ export default function Home() {
       setCurrentStep(nextStep);
       setCurrentSnapshot(nextSnap);
       setActiveLine(nextSnap?.current_line ?? null);
+      fetchTutorExplanation(nextSnap);
     }
   };
 
@@ -106,7 +137,12 @@ export default function Home() {
       setCurrentStep(prevStep);
       setCurrentSnapshot(prevSnap);
       setActiveLine(prevSnap?.current_line ?? null);
+      fetchTutorExplanation(prevSnap);
     }
+  };
+
+  const handleSendTutorMessage = (msg: string) => {
+    fetchTutorExplanation(currentSnapshot, msg);
   };
 
   const handleReset = () => {
@@ -115,6 +151,8 @@ export default function Home() {
     setTotalSteps(0);
     setActiveLine(null);
     setCurrentSnapshot(null);
+    setTutorMessages([]);
+    setSuggestedQuestion("");
     setInputRequired(false);
     setSubmittedInputs([]);
     setIsRunning(false);
@@ -143,7 +181,12 @@ export default function Home() {
             activeLine={activeLine}
           />
           <VisualizationPanel snapshot={currentSnapshot} />
-          <TutorPanel />
+          <TutorPanel
+            messages={tutorMessages}
+            onSendMessage={handleSendTutorMessage}
+            suggestedQuestion={suggestedQuestion}
+            isLoading={tutorLoading}
+          />
         </main>
       </div>
 

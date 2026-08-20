@@ -217,20 +217,25 @@ def trace_exec(source: str, inputs: list[str] | None = None) -> None:
 
     builtins.input = custom_input
 
-    # Capture program stdout
+    # Capture program stdout and stderr
     real_stdout = sys.stdout
-    output_buf = io.StringIO()
+    real_stderr = sys.stderr
+    event_out = real_stderr  # events go to real stderr
 
-    class _CapturingStdout(io.TextIOBase):
+    class _CapturingStream(io.TextIOBase):
+        def __init__(self, stream_name: str) -> None:
+            self._stream_name = stream_name
+
         def write(self, s: str) -> int:
-            output_buf.write(s)
-            tracer._emit({"type": "output", "stream": "stdout", "value": s})
+            if s:
+                tracer._emit({"type": "output", "stream": self._stream_name, "value": s})
             return len(s)
 
         def flush(self) -> None:
             pass
 
-    sys.stdout = _CapturingStdout()  # type: ignore
+    sys.stdout = _CapturingStream("stdout")  # type: ignore
+    sys.stderr = _CapturingStream("stderr")  # type: ignore
 
     # Emit program_start
     tracer._emit({"type": "program_start"})
@@ -256,3 +261,4 @@ def trace_exec(source: str, inputs: list[str] | None = None) -> None:
         sys.settrace(None)
         builtins.input = original_input
         sys.stdout = real_stdout
+        sys.stderr = real_stderr

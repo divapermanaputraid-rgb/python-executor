@@ -1,11 +1,16 @@
 """
-Execution Service API Endpoint (TASK 19).
+Execution Service API Endpoint (TASK 19 & TASK 20).
 POST /api/execute
+GET /api/stream/{session_id}
+POST /api/execute/stream (SSE stream directly)
 """
 from __future__ import annotations
+import asyncio
 import dataclasses
-from typing import Any
+import json
+from typing import Any, AsyncGenerator
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from engine.runner import run_code
@@ -57,3 +62,26 @@ def execute_code(req: ExecuteRequest) -> ExecuteResponse:
             stdout=captured_stdout,
             exit_code=run_res.exit_code,
         )
+
+
+@router.post("/execute/stream")
+async def execute_stream(req: ExecuteRequest) -> StreamingResponse:
+    """Stream normalized events step-by-step as SSE (TASK 20)."""
+    async def event_generator() -> AsyncGenerator[str, None]:
+        with managed_session(req.code) as sess:
+            run_res = run_code(req.code, inputs=req.inputs)
+            norm_events = normalize(run_res.events, sess.session_id)
+            reconstructor = StateReconstructor()
+
+            for evt in norm_events:
+                state = reconstructor.process_event(evt)
+                payload = {
+                    "event": evt,
+                    "snapshot": dataclasses.asdict(state),
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                await asyncio.sleep(0.01)
+
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

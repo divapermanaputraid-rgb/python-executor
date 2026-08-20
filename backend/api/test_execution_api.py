@@ -1,8 +1,10 @@
 """
-Tests for Execution Service API (TASK 19).
+Tests for Execution Service API & Streaming (TASK 19 & TASK 20).
 POST /api/execute
+POST /api/execute/stream
 """
 from __future__ import annotations
+import json
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -43,8 +45,26 @@ def test_execute_with_exception():
     assert any(e["type"] == "exception" for e in data["events"])
 
 
+def test_execute_stream_sse():
+    res = client.post("/api/execute/stream", json={"code": "a = 10\nprint(a)"})
+    assert res.status_code == 200, res.text
+    assert "text/event-stream" in res.headers["content-type"]
+
+    lines = res.text.strip().split("\n\n")
+    data_lines = [l.replace("data: ", "") for l in lines if l.startswith("data: ")]
+
+    assert len(data_lines) >= 2
+    assert data_lines[-1] == "[DONE]"
+
+    first_item = json.loads(data_lines[0])
+    assert "event" in first_item
+    assert "snapshot" in first_item
+    assert first_item["event"]["type"] == "program_start"
+
+
 if __name__ == "__main__":
     test_execute_success()
     test_execute_with_inputs()
     test_execute_with_exception()
-    print("All Execution API tests passed.")
+    test_execute_stream_sse()
+    print("All Execution & Streaming API tests passed.")

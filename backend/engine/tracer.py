@@ -9,6 +9,7 @@ MASTER_CODING.md: "Do NOT simulate Python execution with regex/string parsing/LL
 execution_flow.md §30: "Current line must come from execution trace."
 """
 from __future__ import annotations
+import builtins
 import sys
 import json
 import time
@@ -172,15 +173,49 @@ class LineTracer:
 # Entry point — called inside child process
 # ---------------------------------------------------------------------------
 
-def trace_exec(source: str) -> None:
+def trace_exec(source: str, inputs: list[str] | None = None) -> None:
     """
     Install tracer, execute source, emit JSON events.
     stdout carries events; real program output is also emitted as 'output' events.
+    inputs: pre-supplied inputs or interactive input values.
     """
     out = sys.stderr  # events go to stderr; stdout stays for program output
     lines = source.splitlines()
 
     tracer = LineTracer(source_lines=lines, out=out)
+
+    # Input queue setup
+    input_queue = list(inputs) if inputs is not None else []
+    original_input = builtins.input
+
+    def custom_input(prompt: str = "") -> str:
+        # Get frame of user code calling input()
+        frame = sys._getframe(1)
+        line = frame.f_lineno if frame.f_code.co_filename == USER_CODE_FILE else 1
+
+        tracer._emit({
+            "type": "input_requested",
+            "line": line,
+            "prompt": str(prompt),
+        })
+
+        if input_queue:
+            val = input_queue.pop(0)
+        else:
+            # Fallback to stdin line if available
+            try:
+                val = sys.__stdin__.readline().rstrip("\r\n")
+            except Exception:
+                val = ""
+
+        tracer._emit({
+            "type": "input_received",
+            "line": line,
+            "value": val,
+        })
+        return val
+
+    builtins.input = custom_input
 
     # Capture program stdout
     real_stdout = sys.stdout
@@ -189,7 +224,6 @@ def trace_exec(source: str) -> None:
     class _CapturingStdout(io.TextIOBase):
         def write(self, s: str) -> int:
             output_buf.write(s)
-            # Emit output event immediately
             tracer._emit({"type": "output", "stream": "stdout", "value": s})
             return len(s)
 
@@ -217,7 +251,8 @@ def trace_exec(source: str) -> None:
         tracer._emit({"type": "program_end", "status": "error"})
     except Exception:
         sys.settrace(None)
-        # exception event already emitted by local_trace
         tracer._emit({"type": "program_end", "status": "error"})
     finally:
+        sys.settrace(None)
+        builtins.input = original_input
         sys.stdout = real_stdout

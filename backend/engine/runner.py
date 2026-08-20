@@ -39,18 +39,22 @@ class RunResult:
     exit_code: int = 0
 
 
-def run_code(source: str, timeout: float = DEFAULT_TIMEOUT_S) -> RunResult:
+def run_code(
+    source: str,
+    inputs: list[str] | None = None,
+    timeout: float = DEFAULT_TIMEOUT_S,
+) -> RunResult:
     """Execute source in isolated child process; return parsed execution events."""
     if len(source.encode()) > MAX_SOURCE_BYTES:
         raise ValueError(f"Source code exceeds {MAX_SOURCE_BYTES} bytes")
 
-    # Child bootstrap: import tracer from engine dir, then trace_exec(source)
-    escaped = source.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    # Child bootstrap: import tracer from engine dir, then trace_exec(source, inputs)
+    inputs_repr = repr(inputs or [])
     bootstrap = textwrap.dedent(f"""\
         import sys
         sys.path.insert(0, {str(_ENGINE_DIR.parent)!r})
         from engine.tracer import trace_exec
-        trace_exec({source!r})
+        trace_exec({source!r}, {inputs_repr})
     """)
 
     try:

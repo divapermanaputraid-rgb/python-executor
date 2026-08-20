@@ -83,7 +83,8 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 21 | Frontend 3-Panel Layout | ✅ |
 | 22 | Monaco Code Editor & Line Highlighter | ✅ |
 | 23 | Execution Controls & Stepper UI | ✅ |
-| 24-30 | State Visualizer, Input UI, AI Tutor, & Hardening | 🔄 In Progress |
+| 24 | State Visualization Panels (Variables, Stack, Output) | ✅ |
+| 25-30 | Interactive Input UI, API Integration, AI Tutor, & Hardening | 🔄 In Progress |
 
 ---
 

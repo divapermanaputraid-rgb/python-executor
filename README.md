@@ -82,7 +82,8 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 20 | Event Stream (SSE API) | ✅ |
 | 21 | Frontend 3-Panel Layout | ✅ |
 | 22 | Monaco Code Editor & Line Highlighter | ✅ |
-| 23-30 | Execution Controls, State Visualizer, AI Tutor, & Hardening | 🔄 In Progress |
+| 23 | Execution Controls & Stepper UI | ✅ |
+| 24-30 | State Visualizer, Input UI, AI Tutor, & Hardening | 🔄 In Progress |
 
 ---
 

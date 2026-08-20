@@ -87,7 +87,8 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 25 | Interactive Input Prompting UI Modal | ✅ |
 | 26 | Backend API & SSE Stream Integration | ✅ |
 | 27 | AI Context Builder & Fact Enforcer | ✅ |
-| 28-30 | Socratic AI Tutor Pedagogical Logic, Integration & Hardening | 🔄 In Progress |
+| 28 | Socratic AI Tutor Pedagogical Logic & API | ✅ |
+| 29-30 | Socratic Learning Flow & End-to-End Hardening | 🔄 In Progress |
 
 ---
 

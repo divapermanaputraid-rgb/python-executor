@@ -200,6 +200,39 @@ def trace_exec(source: str, inputs: list[str] | None = None) -> None:
 
     tracer = LineTracer(source_lines=lines, out=out)
 
+    # Network & Process restrictions (SECURITY_SPEC.md §8, §10, §18)
+    import socket
+    import subprocess
+    import os
+
+    orig_socket = socket.socket
+    orig_subprocess_popen = subprocess.Popen
+    orig_os_system = os.system
+
+    def blocked_socket(*args, **kwargs):
+        frame = sys._getframe(1)
+        tracer._emit({
+            "type": "security_violation",
+            "line": frame.f_lineno if frame.f_code.co_filename == USER_CODE_FILE else 1,
+            "reason": "network_access_blocked",
+        })
+        raise PermissionError("Network socket creation is forbidden by sandbox")
+
+    def blocked_process(*args, **kwargs):
+        frame = sys._getframe(1)
+        tracer._emit({
+            "type": "security_violation",
+            "line": frame.f_lineno if frame.f_code.co_filename == USER_CODE_FILE else 1,
+            "reason": "process_creation_blocked",
+        })
+        raise PermissionError("Arbitrary subprocess creation is forbidden by sandbox")
+
+    socket.socket = blocked_socket
+    subprocess.Popen = blocked_process
+    os.system = blocked_process
+    if hasattr(os, "popen"):
+        os.popen = blocked_process
+
     # Input queue setup
     input_queue = list(inputs) if inputs is not None else []
     original_input = builtins.input
@@ -309,5 +342,8 @@ def trace_exec(source: str, inputs: list[str] | None = None) -> None:
         sys.settrace(None)
         builtins.input = original_input
         builtins.open = original_open
+        socket.socket = orig_socket
+        subprocess.Popen = orig_subprocess_popen
+        os.system = orig_os_system
         sys.stdout = real_stdout
         sys.stderr = real_stderr

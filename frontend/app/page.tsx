@@ -7,41 +7,29 @@ import EditorPanel from "./components/EditorPanel";
 import ExecutionControls from "./components/ExecutionControls";
 import VisualizationPanel, { ExecutionSnapshotUI } from "./components/VisualizationPanel";
 import TutorPanel from "./components/TutorPanel";
+import InputPromptModal from "./components/InputPromptModal";
 
 export default function Home() {
-  const [code, setCode] = useState("# Write Python code here\nx = 5\ny = 10\nprint(x + y)");
+  const [code, setCode] = useState("# Write Python code here\nname = input('Enter name: ')\nprint(f'Hello {name}')");
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [currentSnapshot, setCurrentSnapshot] = useState<ExecutionSnapshotUI | null>(null);
 
+  // Input prompting state
+  const [inputRequired, setInputRequired] = useState(false);
+  const [inputPrompt, setInputPrompt] = useState("");
+  const [submittedInputs, setSubmittedInputs] = useState<string[]>([]);
+
   const demoSnapshots: ExecutionSnapshotUI[] = [
     {
-      status: "RUNNING",
+      status: "WAITING_FOR_INPUT",
       current_line: 2,
       current_frame_id: "f1",
-      variables: { x: { type: "int", repr: "5" } },
+      variables: {},
       call_stack: [
-        { frame_id: "f1", function: "<module>", scope: "global", line: 2, variables: { x: { type: "int", repr: "5" } } },
-      ],
-      stdout: "",
-      stderr: "",
-      exception: null,
-    },
-    {
-      status: "RUNNING",
-      current_line: 3,
-      current_frame_id: "f1",
-      variables: { x: { type: "int", repr: "5" }, y: { type: "int", repr: "10" } },
-      call_stack: [
-        {
-          frame_id: "f1",
-          function: "<module>",
-          scope: "global",
-          line: 3,
-          variables: { x: { type: "int", repr: "5" }, y: { type: "int", repr: "10" } },
-        },
+        { frame_id: "f1", function: "<module>", scope: "global", line: 2, variables: {} },
       ],
       stdout: "",
       stderr: "",
@@ -49,19 +37,19 @@ export default function Home() {
     },
     {
       status: "COMPLETED",
-      current_line: 4,
+      current_line: 3,
       current_frame_id: "f1",
-      variables: { x: { type: "int", repr: "5" }, y: { type: "int", repr: "10" } },
+      variables: { name: { type: "str", repr: "'Alice'" } },
       call_stack: [
         {
           frame_id: "f1",
           function: "<module>",
           scope: "global",
-          line: 4,
-          variables: { x: { type: "int", repr: "5" }, y: { type: "int", repr: "10" } },
+          line: 3,
+          variables: { name: { type: "str", repr: "'Alice'" } },
         },
       ],
-      stdout: "15\n",
+      stdout: "Hello Alice\n",
       stderr: "",
       exception: null,
     },
@@ -70,10 +58,28 @@ export default function Home() {
   const handleRun = () => {
     setIsRunning(true);
     setCurrentStep(1);
-    setTotalSteps(3);
+    setTotalSteps(2);
     setActiveLine(2);
     setCurrentSnapshot(demoSnapshots[0]);
+
+    if (code.includes("input(")) {
+      setInputPrompt("Enter name: ");
+      setInputRequired(true);
+    }
     setIsRunning(false);
+  };
+
+  const handleInputSubmit = (val: string) => {
+    setSubmittedInputs((prev) => [...prev, val]);
+    setInputRequired(false);
+    // Advance to step 2 after receiving input
+    setCurrentStep(2);
+    setActiveLine(3);
+    setCurrentSnapshot({
+      ...demoSnapshots[1],
+      variables: { name: { type: "str", repr: `'${val}'` } },
+      stdout: `Hello ${val}\n`,
+    });
   };
 
   const handleStepNext = () => {
@@ -99,6 +105,8 @@ export default function Home() {
     setTotalSteps(0);
     setActiveLine(null);
     setCurrentSnapshot(null);
+    setInputRequired(false);
+    setSubmittedInputs([]);
     setIsRunning(false);
   };
 
@@ -111,7 +119,7 @@ export default function Home() {
         onStepPrev={handleStepPrev}
         onReset={handleReset}
         isRunning={isRunning}
-        canStepNext={currentStep < totalSteps && totalSteps > 0}
+        canStepNext={currentStep < totalSteps && totalSteps > 0 && !inputRequired}
         canStepPrev={currentStep > 1}
         currentStep={currentStep}
         totalSteps={totalSteps}
@@ -128,6 +136,13 @@ export default function Home() {
           <TutorPanel />
         </main>
       </div>
+
+      {inputRequired && (
+        <InputPromptModal
+          promptText={inputPrompt}
+          onSubmit={handleInputSubmit}
+        />
+      )}
     </div>
   );
 }

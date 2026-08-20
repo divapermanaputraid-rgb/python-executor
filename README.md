@@ -84,7 +84,8 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 22 | Monaco Code Editor & Line Highlighter | ✅ |
 | 23 | Execution Controls & Stepper UI | ✅ |
 | 24 | State Visualization Panels (Variables, Stack, Output) | ✅ |
-| 25-30 | Interactive Input UI, API Integration, AI Tutor, & Hardening | 🔄 In Progress |
+| 25 | Interactive Input Prompting UI Modal | ✅ |
+| 26-30 | API Integration, AI Context Builder, AI Tutor, & Hardening | 🔄 In Progress |
 
 ---
 

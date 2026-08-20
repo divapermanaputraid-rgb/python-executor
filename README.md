@@ -86,7 +86,8 @@ Proyek ini dibangun secara inkremental mengikuti 30-task roadmap.
 | 24 | State Visualization Panels (Variables, Stack, Output) | ✅ |
 | 25 | Interactive Input Prompting UI Modal | ✅ |
 | 26 | Backend API & SSE Stream Integration | ✅ |
-| 27-30 | AI Context Builder, Socratic AI Tutor, & Hardening | 🔄 In Progress |
+| 27 | AI Context Builder & Fact Enforcer | ✅ |
+| 28-30 | Socratic AI Tutor Pedagogical Logic, Integration & Hardening | 🔄 In Progress |
 
 ---
 

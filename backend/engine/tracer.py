@@ -269,8 +269,17 @@ def trace_exec(source: str, inputs: list[str] | None = None) -> None:
             "exception": {"type": "SyntaxError", "message": str(e)},
         })
         tracer._emit({"type": "program_end", "status": "error"})
-    except Exception:
+    except Exception as e:
         sys.settrace(None)
+        tracer._emit({
+            "type": "exception",
+            "line": getattr(e, "lineno", 1) or 1,
+            "frame_id": "frame_global",
+            "exception": {
+                "type": type(e).__name__,
+                "message": str(e),
+            },
+        })
         tracer._emit({"type": "program_end", "status": "error"})
     finally:
         sys.settrace(None)

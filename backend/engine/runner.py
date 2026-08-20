@@ -1,32 +1,29 @@
 """
-Execute user Python code in an isolated subprocess with sys.settrace tracing.
+Execute user Python code in an isolated subprocess with sys.settrace tracing
+and strict resource limits.
 
-Architecture:
-  backend process
-      ↓ subprocess
-  child process
-      ├── tracer.trace_exec(source)
-      ├── emits JSON events → stderr
-      └── program stdout → stdout
-  backend process
-      └── parse JSON events from stderr
-
-Security: user code never runs in main backend process. (SECURITY_SPEC.md §20)
-ponytail: no full sandbox yet — filesystem/network/env isolation in TASK 15-18.
+Security Limits (SECURITY_SPEC.md §11-15, §27):
+  - Timeout: 3 seconds
+  - Max source size: 64 KB
+  - Max output size: 256 KB
+  - Max memory: 256 MB (via resource.setrlimit)
+  - Execution timeout / memory abuse terminates process safely.
 """
 from __future__ import annotations
 import json
+import os
+import resource
 import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 
-MAX_SOURCE_BYTES = 64 * 1024    # SECURITY_SPEC.md §27
-MAX_OUTPUT_BYTES = 256 * 1024   # SECURITY_SPEC.md §15
-DEFAULT_TIMEOUT_S = 5           # SECURITY_SPEC.md §12
+MAX_SOURCE_BYTES = 64 * 1024      # SECURITY_SPEC.md §27 (64 KB)
+MAX_OUTPUT_BYTES = 256 * 1024     # SECURITY_SPEC.md §15 (256 KB)
+DEFAULT_TIMEOUT_S = 3.0           # SECURITY_SPEC.md §11-12 (3s)
+MAX_MEMORY_BYTES = 256 * 1024 * 1024  # SECURITY_SPEC.md §13 (256 MB)
 
-# Path to tracer module so child can import it
 _ENGINE_DIR = Path(__file__).parent
 
 
@@ -34,9 +31,18 @@ _ENGINE_DIR = Path(__file__).parent
 class RunResult:
     events: list[dict] = field(default_factory=list)
     stdout: str = ""
-    stderr_raw: str = ""   # non-JSON stderr lines (Python tracebacks, etc.)
+    stderr_raw: str = ""
     timed_out: bool = False
     exit_code: int = 0
+
+
+def _set_resource_limits() -> None:
+    """Pre-exec fn in child process: sets memory rlimit."""
+    try:
+        # RLIMIT_AS limit (virtual memory)
+        resource.setrlimit(resource.RLIMIT_AS, (MAX_MEMORY_BYTES, MAX_MEMORY_BYTES))
+    except (ValueError, OSError):
+        pass  # On OSs where RLIMIT_AS is not strictly supported, subprocess limit handles timeout/OOM kill
 
 
 def run_code(
@@ -44,11 +50,10 @@ def run_code(
     inputs: list[str] | None = None,
     timeout: float = DEFAULT_TIMEOUT_S,
 ) -> RunResult:
-    """Execute source in isolated child process; return parsed execution events."""
+    """Execute source in isolated child process with strict resource bounds."""
     if len(source.encode()) > MAX_SOURCE_BYTES:
-        raise ValueError(f"Source code exceeds {MAX_SOURCE_BYTES} bytes")
+        raise ValueError(f"Source code size exceeds limit of {MAX_SOURCE_BYTES} bytes")
 
-    # Child bootstrap: import tracer from engine dir, then trace_exec(source, inputs)
     inputs_repr = repr(inputs or [])
     bootstrap = textwrap.dedent(f"""\
         import sys
@@ -63,14 +68,31 @@ def run_code(
             capture_output=True,
             timeout=timeout,
             text=True,
+            preexec_fn=_set_resource_limits if os.name != "nt" else None,
         )
     except subprocess.TimeoutExpired:
         return RunResult(
             timed_out=True,
-            events=[{"type": "timeout", "sequence": 1, "timestamp": 0, "limit_ms": int(timeout * 1000)}],
+            events=[{
+                "type": "timeout",
+                "sequence": 1,
+                "timestamp": 0,
+                "limit_ms": int(timeout * 1000),
+            }],
         )
 
-    # Parse events from stderr (one JSON per line)
+    # Memory limit kill check (exit code -9 / SIGKILL or MemoryError in stderr)
+    if result.returncode == -9 or "MemoryError" in result.stderr:
+        return RunResult(
+            events=[{
+                "type": "security_violation",
+                "sequence": 1,
+                "timestamp": 0,
+                "reason": "memory_limit_exceeded",
+            }],
+            exit_code=result.returncode,
+        )
+
     events: list[dict] = []
     raw_lines: list[str] = []
     for line in result.stderr.splitlines():
